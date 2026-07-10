@@ -24,4 +24,15 @@ export const state = {
   tempMatrix: new THREE.Matrix4(),
   clock: new THREE.Clock(),
   currentTextToRead: '',
+
+  // Pop-up and zoom state
+  selectedHotspot: null,
+  prevBButtonPressed: [false, false],
+  prevAButtonPressed: [false, false],
+  grippedControllers: [],
+  grabbingController: null,
+  poppedModel: null,
+  vrManualMesh: null,
+  initialZoomDistance: 0,
+  initialPoppedScale: 1.0,
 };

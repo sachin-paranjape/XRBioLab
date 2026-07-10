@@ -190,6 +190,17 @@ export function lazyLoadGLBModels() {
       (gltf) => {
         const newModel = gltf.scene;
 
+        // Force opaque rendering to solve alpha-sorting and depth-buffer clipping issues
+        newModel.traverse((child) => {
+          if (child.isMesh && child.material) {
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.forEach((mat) => {
+              mat.transparent = false;
+              mat.depthWrite = true;
+            });
+          }
+        });
+
         const box = new THREE.Box3().setFromObject(newModel);
         const size = box.getSize(new THREE.Vector3());
         const center = box.getCenter(new THREE.Vector3());

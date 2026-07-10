@@ -7,11 +7,13 @@ export function setupControllers() {
     const controller = state.renderer.xr.getController(i);
     controller.addEventListener('selectstart', onVRSelectStart);
     controller.addEventListener('squeezestart', onVRSqueezeStart);
+    controller.addEventListener('squeezeend', onVRSqueezeEnd);
 
     const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]);
     const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 }));
     line.scale.z = 4;
     controller.add(line);
+    controller.userData.rayLine = line;
 
     state.headRig.add(controller);
     state.controllers.push(controller);
@@ -34,7 +36,47 @@ export function onVRSelectStart(event) {
 }
 
 export function onVRSqueezeStart(event) {
-  deselectHotspot();
+  const controller = event.target;
+  
+  // Set up raycaster from this controller
+  state.tempMatrix.identity().extractRotation(controller.matrixWorld);
+  state.raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+  state.raycaster.ray.direction.set(0, 0, -1).applyMatrix4(state.tempMatrix);
+
+  // Check if we hit any hotspot hit spheres
+  const hitSpheres = state.hotspotMeshes.map(g => g.userData.hitSphere);
+  const intersects = state.raycaster.intersectObjects(hitSpheres, false);
+  
+  if (intersects.length > 0) {
+    const hotspotGroup = intersects[0].object.parent;
+    if (hotspotGroup && hotspotGroup.userData.model) {
+      // Remove any existing grabbed model on this controller
+      if (controller.userData.grabbedModel) {
+        controller.remove(controller.userData.grabbedModel);
+      }
+
+      // Clone and attach model to controller
+      const modelToGrab = hotspotGroup.userData.model;
+      const cloned = modelToGrab.clone();
+      cloned.position.set(0, 0, -0.6); // 0.6m directly in front of the controller
+      cloned.rotation.set(0, 0, 0);
+
+      const baseScale = modelToGrab.userData.baseScale || 1.0;
+      cloned.scale.setScalar(baseScale * 1.5);
+      cloned.userData.baseScale = baseScale * 1.5;
+
+      controller.add(cloned);
+      controller.userData.grabbedModel = cloned;
+    }
+  }
+}
+
+export function onVRSqueezeEnd(event) {
+  const controller = event.target;
+  if (controller.userData.grabbedModel) {
+    controller.remove(controller.userData.grabbedModel);
+    controller.userData.grabbedModel = null;
+  }
 }
 
 const pointerStart = { x: 0, y: 0 };
@@ -72,12 +114,14 @@ export function onPointerUp(event) {
 
 export function selectHotspot(data) {
   console.log("Selecting hotspot:", data.title); // Debug check
+  state.selectedHotspot = data;
   updateInfoPanel(data);
   state.currentTextToRead = `This is the ${data.title}. ${data.desc}`;
   speakText(state.currentTextToRead);
 }
 
 export function deselectHotspot() {
+  state.selectedHotspot = null;
   updateInfoPanel(null);
   stopSpeaking();
 }

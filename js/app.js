@@ -3,8 +3,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { state } from './state.js';
 import { setupLighting, setupEnvironment } from './environment.js';
 import { setupHotspots, lazyLoadGLBModels } from './models.js';
-import { setupInfoPanel } from './ui.js';
-import { setupControllers, onPointerDown, onPointerUp } from './interaction.js';
+import { setupInfoPanel, setupVRManual } from './ui.js';
+import { setupControllers, onPointerDown, onPointerUp, deselectHotspot } from './interaction.js';
 
 // --- XR BUTTON UTILITY ---
 const XRButton = {
@@ -152,6 +152,7 @@ export async function init() {
 
   state.controls = new OrbitControls(state.camera, state.renderer.domElement);
   state.controls.target.set(0, 1.4, -3.5);
+  state.controls.listenToKeyEvents(window);
   state.controls.update();
 
   setupLighting();
@@ -159,6 +160,49 @@ export async function init() {
   setupHotspots(); // Instant — procedural models only
   setupInfoPanel();
   setupControllers();
+  setupVRManual();
+
+  // XR Session Event Listeners
+  state.renderer.xr.addEventListener('sessionstart', () => {
+    // VR manual starts hidden, shown only when A button is pressed
+    if (state.vrManualMesh) {
+      state.vrManualMesh.visible = false;
+    }
+    // Hide desktop manual modal if visible
+    const manualModal = document.getElementById('manual-modal');
+    if (manualModal) {
+      manualModal.classList.add('hidden');
+    }
+  });
+
+  state.renderer.xr.addEventListener('sessionend', () => {
+    // Hide VR manual when exiting VR
+    if (state.vrManualMesh) {
+      state.vrManualMesh.visible = false;
+    }
+  });
+
+  // Desktop manual toggle setup
+  const manualModal = document.getElementById('manual-modal');
+  const closeManualBtn = document.getElementById('close-manual-btn');
+  const closeManualBtnTop = document.getElementById('close-manual-btn-top');
+  const manualToggleBtn = document.getElementById('manual-toggle-btn');
+
+  function toggleDesktopManual() {
+    if (manualModal) {
+      manualModal.classList.toggle('hidden');
+    }
+  }
+
+  if (closeManualBtn) closeManualBtn.onclick = toggleDesktopManual;
+  if (closeManualBtnTop) closeManualBtnTop.onclick = toggleDesktopManual;
+  if (manualToggleBtn) manualToggleBtn.onclick = toggleDesktopManual;
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'a' || e.key === 'A') {
+      toggleDesktopManual();
+    }
+  });
 
   window.addEventListener('pointerdown', onPointerDown);
   window.addEventListener('pointerup', onPointerUp);
@@ -219,15 +263,35 @@ function animate(timestamp, frame) {
     if (session) {
       const speed = 2.5;
       const moveVector = new THREE.Vector3();
+      session.inputSources.forEach((source, index) => {
+        // Read B/Y button (button index 5 on Quest/Oculus controllers) to deselect
+        if (source.gamepad && source.gamepad.buttons && source.gamepad.buttons[5]) {
+          const isPressed = source.gamepad.buttons[5].pressed;
+          if (isPressed && !state.prevBButtonPressed[index]) {
+            deselectHotspot();
+          }
+          state.prevBButtonPressed[index] = isPressed;
+        }
 
-      session.inputSources.forEach((source) => {
+        // Read A/X button (button index 4 on Quest/Oculus controllers) to toggle manual
+        if (source.gamepad && source.gamepad.buttons && source.gamepad.buttons[4]) {
+          const isPressed = source.gamepad.buttons[4].pressed;
+          if (isPressed && !state.prevAButtonPressed[index]) {
+            if (state.vrManualMesh) {
+              state.vrManualMesh.visible = !state.vrManualMesh.visible;
+            }
+          }
+          state.prevAButtonPressed[index] = isPressed;
+        }
+
         if (!source.gamepad || !source.gamepad.axes) return;
 
         const axes = source.gamepad.axes;
         const handedness = source.handedness; // 'left' or 'right'
 
-        // LEFT CONTROLLER: Rotation & Pitch
+        // LEFT CONTROLLER: Rotation & Pitch (standard locomotion, model rotation handles physically now)
         if (handedness === 'left') {
+          // Standard locomotion rotation
           if (Math.abs(axes[2]) > 0.1) {
             state.userRig.rotation.y -= axes[2] * 1.5 * delta;
           }
@@ -236,9 +300,13 @@ function animate(timestamp, frame) {
             state.pitchOffset = Math.max(-Math.PI / 6, Math.min(Math.PI / 6, state.pitchOffset));
           }
         }
+      });
 
-        // RIGHT CONTROLLER: Movement
-        if (handedness === 'right' && (Math.abs(axes[2]) > 0.1 || Math.abs(axes[3]) > 0.1)) {
+      // RIGHT CONTROLLER: Movement
+      const rightSource = session.inputSources.find(s => s.handedness === 'right');
+      if (rightSource && rightSource.gamepad && rightSource.gamepad.axes) {
+        const axes = rightSource.gamepad.axes;
+        if (Math.abs(axes[2]) > 0.1 || Math.abs(axes[3]) > 0.1) {
           const forward = new THREE.Vector3(0, 0, -1).transformDirection(state.camera.matrixWorld);
           forward.y = 0; forward.normalize();
 
@@ -248,7 +316,7 @@ function animate(timestamp, frame) {
           moveVector.addScaledVector(forward, -axes[3]);
           moveVector.addScaledVector(right, axes[2]);
         }
-      });
+      }
 
       // Collision & Movement
       if (moveVector.lengthSq() > 0.001) {
@@ -261,7 +329,7 @@ function animate(timestamp, frame) {
           { x: -2.5, z: -11.5 }, { x: 2.5, z: -11.5 }
         ];
 
-        let collision = benches.some(b => nextPos.distanceTo(new THREE.Vector3(b.x, 0, b.z)) < 1.5);
+        let collision = benches.some(b => nextPos.distanceTo(new THREE.Vector3(b.x, 0, b.z)) < 1.6);
 
         if (!collision) {
           state.userRig.position.copy(nextPos);
@@ -272,6 +340,31 @@ function animate(timestamp, frame) {
         state.userRig.position.z = Math.max(-14, Math.min(14, state.userRig.position.z));
       }
     }
+
+    // 2.5 Controller Raycaster Highlight
+    state.controllers.forEach((controller) => {
+      if (controller.parent) {
+        state.tempMatrix.identity().extractRotation(controller.matrixWorld);
+        state.raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+        state.raycaster.ray.direction.set(0, 0, -1).applyMatrix4(state.tempMatrix);
+
+        const hitSpheres = state.hotspotMeshes.map(g => g.userData.hitSphere);
+        const intersects = state.raycaster.intersectObjects(hitSpheres, false);
+        
+        const line = controller.userData.rayLine;
+        if (line) {
+          if (intersects.length > 0) {
+            line.material.color.setHex(0x4ecdc4); // Teal Highlight
+            line.material.opacity = 0.9;
+          } else {
+            line.material.color.setHex(0xffffff); // Default White
+            line.material.opacity = 0.5;
+          }
+        }
+      }
+    });
+
+
 
     // 3. Model Animations & Labels
     state.hotspotMeshes.forEach((group, i) => {
@@ -304,6 +397,7 @@ function animate(timestamp, frame) {
   } else {
     // Desktop / non-VR mode
     state.controls.enabled = true;
+    state.controls.update();
 
     // Model Animations & Labels
     state.hotspotMeshes.forEach((group, i) => {
