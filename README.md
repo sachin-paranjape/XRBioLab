@@ -19,8 +19,12 @@ The lab is split into three main learning zones:
 
 Watch the XR Biology Lab in action:
 
+Desktop/Mobile:
+<video controls src="Desktop-BiologyXR.mp4" title="Title"></video>
 
-[XR Biology Lab YouTube Demo](https://youtube.com/shorts/hLqXIe8XTCc?si=dADIT-BOIddpYLZy)
+VR mode:
+<video controls src="VR-BiologyXR.mp4" title="Title"></video>
+
 
 This demo showcases VR navigation, model interactions, and the interactive lab environment.
 
@@ -114,13 +118,3 @@ This spawns Tunnelmole, forces IPv4 resolution to prevent local OS DNS lookup ha
 * Dual-controller pinch zoom mechanics to scale grabbed models.
 
 ---
-
-## Author
-**Awodi Abdulmujeeb A.**
-* GitHub: [Platinum04](https://github.com/Platinum04)
-* LinkedIn: [Awodi Abdulmujeeb A.](https://www.linkedin.com/in/awodi/)
-
----
-
-## License
-This project is licensed under the MIT License. See [LICENSE](file:///d:/WebXR/vibe-coded-xr-biology-lab-main/LICENSE) for details.
