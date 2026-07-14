@@ -5,6 +5,7 @@ An interactive Virtual Reality Biology Lab built using **Gemini XR Blocks** and 
 ---
 ## Demo Video
 
+https://github.com/user-attachments/assets/a5597a9b-e3c4-4133-8e13-283e8bdebb92
 
 ## Features & Current Working
 
